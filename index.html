@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>Shadow Cartel</title>
+    <!-- Font Awesome 6 (free) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* CSS will be embedded here – see style.css section */
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Loading overlay -->
+        <div id="loading-overlay" class="overlay">
+            <div class="spinner"></div>
+            <p>Connecting to the underworld...</p>
+        </div>
+
+        <!-- Authentication screen (name entry) -->
+        <div id="auth-screen" class="screen">
+            <div class="glass-panel">
+                <h1><i class="fas fa-skull"></i> SHADOW CARTEL <i class="fas fa-skull"></i></h1>
+                <p>Enter your alias to enter the shadows</p>
+                <input type="text" id="display-name" placeholder="Your alias" maxlength="20">
+                <button id="enter-btn" class="btn-primary">Enter the Shadows</button>
+            </div>
+        </div>
+
+        <!-- Home screen (create / join) -->
+        <div id="home-screen" class="screen hidden">
+            <div class="glass-panel">
+                <h2>Welcome, <span id="user-name"></span></h2>
+                <div class="button-group">
+                    <button id="create-room-btn" class="btn-primary"><i class="fas fa-plus-circle"></i> Create Room</button>
+                    <button id="join-room-btn" class="btn-secondary"><i class="fas fa-sign-in-alt"></i> Join Room</button>
+                </div>
+                <div id="join-input" class="hidden">
+                    <input type="text" id="room-code" placeholder="Enter room code">
+                    <button id="submit-join-btn" class="btn-small">Join</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lobby screen -->
+        <div id="lobby-screen" class="screen hidden">
+            <div class="glass-panel">
+                <h2>Room: <span id="lobby-room-code"></span></h2>
+                <div class="player-list" id="lobby-players"></div>
+                <div class="button-group">
+                    <button id="start-game-btn" class="btn-primary hidden">Start Game</button>
+                    <button id="leave-lobby-btn" class="btn-secondary">Leave</button>
+                </div>
+                <p class="small">Share this code with friends</p>
+            </div>
+        </div>
+
+        <!-- Game board screen -->
+        <div id="game-screen" class="screen hidden">
+            <!-- Header with round, phase, timer -->
+            <div class="game-header glass-panel">
+                <div>Round <span id="round-num">0</span>/10</div>
+                <div>Phase: <span id="phase-name">market</span></div>
+                <div>Timer: <span id="timer">60</span>s</div>
+            </div>
+
+            <!-- Main game area (flex on desktop, column on mobile) -->
+            <div class="game-main">
+                <!-- Left column: market & inventory -->
+                <div class="left-panel glass-panel">
+                    <h3>Market <i class="fas fa-chart-line"></i></h3>
+                    <div id="market-prices" class="market-grid"></div>
+                    <h3>Your Inventory <i class="fas fa-box"></i></h3>
+                    <div id="inventory-display" class="inventory-grid"></div>
+                    <div>Money: $<span id="player-money">0</span></div>
+                </div>
+
+                <!-- Right column: players & actions -->
+                <div class="right-panel glass-panel">
+                    <h3>Players <i class="fas fa-users"></i></h3>
+                    <div id="game-players" class="player-list"></div>
+                    <div class="action-buttons">
+                        <button id="trade-btn" class="btn-action"><i class="fas fa-handshake"></i> Trade</button>
+                        <button id="smuggle-btn" class="btn-action"><i class="fas fa-ship"></i> Smuggle</button>
+                        <button id="ability-btn" class="btn-action"><i class="fas fa-mask"></i> Ability</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trade modal (hidden by default) -->
+            <div id="trade-modal" class="modal hidden">
+                <div class="modal-content glass-panel">
+                    <span class="close-modal">&times;</span>
+                    <h3>Create Trade Offer</h3>
+                    <select id="trade-target"></select>
+                    <select id="trade-item">
+                        <option value="gold">Gold</option>
+                        <option value="diamond">Diamond</option>
+                        <option value="weapons">Weapons</option>
+                        <option value="medicine">Medicine</option>
+                        <option value="artifact">Artifact</option>
+                    </select>
+                    <input type="number" id="trade-quantity" min="1" value="1">
+                    <input type="number" id="trade-price" min="0" value="0" placeholder="Price">
+                    <button id="send-trade-btn" class="btn-primary">Send Offer</button>
+                </div>
+            </div>
+
+            <!-- Event popup (hidden by default) -->
+            <div id="event-popup" class="modal hidden">
+                <div class="modal-content glass-panel event-popup">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h3 id="event-title">Event!</h3>
+                    <p id="event-description"></p>
+                    <button id="close-event-btn">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+    <!-- Our script -->
+    <script>
+        // Firebase config – REPLACE WITH YOUR OWN
+const firebaseConfig = {
+    apiKey: "AIzaSyAXB-5JSAapem94mNP6HfkQEQBfUmeNbzY",
+  authDomain: "invictus-newspaper.firebaseapp.com",
+  databaseURL: "https://invictus-newspaper-default-rtdb.firebaseio.com",
+  projectId: "invictus-newspaper",
+  storageBucket: "invictus-newspaper.firebasestorage.app",
+  messagingSenderId: "1006875291418",
+  appId: "1:1006875291418:web:eef346e7032c3e1d32c6a3"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.database();
+
+// Global state
+let currentUser = null;
+let currentRoomId = null;
+let currentPlayerId = null;
+let roomRef = null;
+let playerRef = null;
+let gameStateRef = null;
+
+// DOM elements
+const loadingOverlay = document.getElementById('loading-overlay');
+const authScreen = document.getElementById('auth-screen');
+const homeScreen = document.getElementById('home-screen');
+const lobbyScreen = document.getElementById('lobby-screen');
+const gameScreen = document.getElementById('game-screen');
+const userNameSpan = document.getElementById('user-name');
+const displayNameInput = document.getElementById('display-name');
+const enterBtn = document.getElementById('enter-btn');
+const createRoomBtn = document.getElementById('create-room-btn');
+const joinRoomBtn = document.getElementById('join-room-btn');
+const joinInput = document.getElementById('join-input');
+const roomCodeInput = document.getElementById('room-code');
+const submitJoinBtn = document.getElementById('submit-join-btn');
+const lobbyRoomCodeSpan = document.getElementById('lobby-room-code');
+const lobbyPlayersDiv = document.getElementById('lobby-players');
+const startGameBtn = document.getElementById('start-game-btn');
+const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
+const roundNumSpan = document.getElementById('round-num');
+const phaseNameSpan = document.getElementById('phase-name');
+const timerSpan = document.getElementById('timer');
+const marketPricesDiv = document.getElementById('market-prices');
+const inventoryDisplayDiv = document.getElementById('inventory-display');
+const playerMoneySpan = document.getElementById('player-money');
+const gamePlayersDiv = document.getElementById('game-players');
+const tradeBtn = document.getElementById('trade-btn');
+const smuggleBtn = document.getElementById('smuggle-btn');
+const abilityBtn = document.getElementById('ability-btn');
+const tradeModal = document.getElementById('trade-modal');
+const closeModal = document.querySelector('.close-modal');
+const tradeTarget = document.getElementById('trade-target');
+const tradeItem = document.getElementById('trade-item');
+const tradeQuantity = document.getElementById('trade-quantity');
+const tradePrice = document.getElementById('trade-price');
+const sendTradeBtn = document.getElementById('send-trade-btn');
+const eventPopup = document.getElementById('event-popup');
+const eventTitle = document.getElementById('event-title');
+const eventDescription = document.getElementById('event-description');
+const closeEventBtn = document.getElementById('close-event-btn');
+
+// -------------------- Helper Functions --------------------
+function showScreen(screenId) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+    document.getElementById(screenId).classList.remove('hidden');
+}
+
+function generateRoomCode() {
+    return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
+// -------------------- Authentication --------------------
+enterBtn.addEventListener('click', async () => {
+    const name = displayNameInput.value.trim();
+    if (!name) return alert('Enter an alias');
+    try {
+        await auth.signInAnonymously();
+        currentUser = auth.currentUser;
+        await currentUser.updateProfile({ displayName: name });
+        userNameSpan.textContent = name;
+        showScreen('home-screen');
+    } catch (error) {
+        alert('Auth error: ' + error.message);
+    } finally {
+        loadingOverlay.style.display = 'none';
+    }
+});
+
+auth.onAuthStateChanged(user => {
+    if (user) {
+        currentUser = user;
+        userNameSpan.textContent = user.displayName || 'Anonymous';
+        loadingOverlay.style.display = 'none';
+        showScreen('home-screen');
+    } else {
+        showScreen('auth-screen');
+    }
+});
+
+// -------------------- Home Screen --------------------
+createRoomBtn.addEventListener('click', async () => {
+    if (!currentUser) return;
+    const roomCode = generateRoomCode();
+    const roomRef = db.ref('rooms/' + roomCode);
+    const newRoom = {
+        hostId: currentUser.uid,
+        status: 'waiting',
+        round: 0,
+        phase: 'market',
+        maxPlayers: 6,
+        market: { gold: 200, diamond: 350, weapons: 450, medicine: 150, artifact: 700 },
+        gameState: { round: 0, phase: 'market', timer: 60, eventActive: '' }
+    };
+    await roomRef.set(newRoom);
+    // Add host as player
+    await roomRef.child('players').child(currentUser.uid).set({
+        name: currentUser.displayName,
+        role: 'Trader',
+        money: 1000,
+        inventory: { gold: 2, diamond: 1, weapons: 0, medicine: 3, artifact: 0 },
+        connected: true,
+        arrested: false
+    });
+    currentRoomId = roomCode;
+    currentPlayerId = currentUser.uid;
+    enterLobby(roomCode);
+});
+
+joinRoomBtn.addEventListener('click', () => {
+    joinInput.classList.toggle('hidden');
+});
+
+submitJoinBtn.addEventListener('click', async () => {
+    const code = roomCodeInput.value.trim();
+    if (!code) return;
+    const roomSnap = await db.ref('rooms/' + code).get();
+    if (!roomSnap.exists()) {
+        alert('Room not found');
+        return;
+    }
+    const roomData = roomSnap.val();
+    if (roomData.status !== 'waiting') {
+        alert('Game already in progress');
+        return;
+    }
+    const playerCount = roomData.players ? Object.keys(roomData.players).length : 0;
+    if (playerCount >= roomData.maxPlayers) {
+        alert('Room is full');
+        return;
+    }
+    // Add self to players
+    await db.ref('rooms/' + code + '/players/' + currentUser.uid).set({
+        name: currentUser.displayName,
+        role: 'Trader',
+        money: 1000,
+        inventory: { gold: 2, diamond: 1, weapons: 0, medicine: 3, artifact: 0 },
+        connected: true,
+        arrested: false
+    });
+    currentRoomId = code;
+    currentPlayerId = currentUser.uid;
+    enterLobby(code);
+});
+
+function enterLobby(roomCode) {
+    lobbyRoomCodeSpan.textContent = roomCode;
+    // Listen for players
+    roomRef = db.ref('rooms/' + roomCode);
+    roomRef.on('value', snapshot => {
+        const data = snapshot.val();
+        if (!data) return;
+        // Update lobby players
+        if (data.players) {
+            const players = Object.entries(data.players).map(([id, p]) => ({ id, ...p }));
+            lobbyPlayersDiv.innerHTML = '';
+            players.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'player-item';
+                div.innerHTML = `${p.name} ${p.id === data.hostId ? '<span class="host-badge">HOST</span>' : ''}`;
+                lobbyPlayersDiv.appendChild(div);
+            });
+            // Show start button if host
+            if (data.hostId === currentUser.uid) {
+                startGameBtn.classList.remove('hidden');
+            } else {
+                startGameBtn.classList.add('hidden');
+            }
+        }
+        // If game started, move to game screen
+        if (data.status === 'playing') {
+            enterGame();
+        }
+    });
+    showScreen('lobby-screen');
+}
+
+startGameBtn.addEventListener('click', async () => {
+    if (!currentRoomId) return;
+    // Set status to playing and initialize game
+    await db.ref('rooms/' + currentRoomId).update({ status: 'playing' });
+    // TODO: Assign roles randomly via cloud function
+});
+
+leaveLobbyBtn.addEventListener('click', async () => {
+    if (currentRoomId && currentPlayerId) {
+        await db.ref('rooms/' + currentRoomId + '/players/' + currentPlayerId).remove();
+        // If host left, maybe delete room or reassign – simplified
+    }
+    roomRef.off();
+    currentRoomId = null;
+    showScreen('home-screen');
+});
+
+// -------------------- Game Screen --------------------
+function enterGame() {
+    showScreen('game-screen');
+    // Listen to room changes
+    roomRef = db.ref('rooms/' + currentRoomId);
+    roomRef.on('value', snapshot => {
+        const data = snapshot.val();
+        if (!data) return;
+        // Update header
+        roundNumSpan.textContent = data.gameState?.round || 0;
+        phaseNameSpan.textContent = data.gameState?.phase || 'market';
+        timerSpan.textContent = data.gameState?.timer || 60;
+        // Update market
+        if (data.market) {
+            marketPricesDiv.innerHTML = '';
+            for (const [item, price] of Object.entries(data.market)) {
+                const div = document.createElement('div');
+                div.className = 'market-item';
+                div.innerHTML = `<strong>${item}</strong><br>$${price}`;
+                marketPricesDiv.appendChild(div);
+            }
+        }
+        // Update players list
+        if (data.players) {
+            const players = Object.entries(data.players).map(([id, p]) => ({ id, ...p }));
+            gamePlayersDiv.innerHTML = '';
+            players.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'player-item';
+                div.innerHTML = `${p.name} ${p.arrested ? '<i class="fas fa-bolt" style="color:red"></i>' : ''}`;
+                gamePlayersDiv.appendChild(div);
+            });
+        }
+        // Update current player's inventory & money
+        const myPlayer = data.players?.[currentUser.uid];
+        if (myPlayer) {
+            playerMoneySpan.textContent = myPlayer.money;
+            const inv = myPlayer.inventory;
+            inventoryDisplayDiv.innerHTML = '';
+            for (const [item, qty] of Object.entries(inv)) {
+                const div = document.createElement('div');
+                div.className = 'inventory-item';
+                div.innerHTML = `<strong>${item}</strong><br><span>${qty}</span>`;
+                inventoryDisplayDiv.appendChild(div);
+            }
+        }
+    });
+
+    // Listen for events (simplified: just popup if new event appears)
+    const eventsRef = db.ref('rooms/' + currentRoomId + '/events');
+    eventsRef.limitToLast(1).on('child_added', snapshot => {
+        const ev = snapshot.val();
+        if (ev && ev.round === parseInt(roundNumSpan.textContent)) {
+            eventTitle.textContent = ev.type.replace(/([A-Z])/g, ' $1').toUpperCase();
+            eventDescription.textContent = ev.description;
+            eventPopup.classList.remove('hidden');
+        }
+    });
+}
+
+closeEventBtn.addEventListener('click', () => {
+    eventPopup.classList.add('hidden');
+});
+
+// -------------------- Trade Modal --------------------
+tradeBtn.addEventListener('click', () => {
+    // Populate target players (excluding self)
+    const playersRef = db.ref('rooms/' + currentRoomId + '/players');
+    playersRef.once('value', snapshot => {
+        const players = snapshot.val();
+        tradeTarget.innerHTML = '';
+        for (const [id, p] of Object.entries(players)) {
+            if (id !== currentUser.uid) {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = p.name;
+                tradeTarget.appendChild(opt);
+            }
+        }
+    });
+    tradeModal.classList.remove('hidden');
+});
+
+closeModal.addEventListener('click', () => {
+    tradeModal.classList.add('hidden');
+});
+
+sendTradeBtn.addEventListener('click', async () => {
+    const toPlayer = tradeTarget.value;
+    const item = tradeItem.value;
+    const quantity = parseInt(tradeQuantity.value);
+    const price = parseInt(tradePrice.value);
+    if (!toPlayer || quantity < 1 || price < 0) return alert('Invalid trade');
+    // Create trade object
+    const tradeId = Date.now().toString();
+    const tradeData = {
+        fromPlayer: currentUser.uid,
+        toPlayer,
+        item,
+        quantity,
+        price,
+        status: 'pending'
+    };
+    await db.ref('rooms/' + currentRoomId + '/trades/' + tradeId).set(tradeData);
+    tradeModal.classList.add('hidden');
+    // In a real game, server would process acceptance/rejection
+});
+
+// -------------------- Smuggling (placeholder) --------------------
+smuggleBtn.addEventListener('click', () => {
+    alert('Smuggling action – would send request to server');
+    // In real implementation: check phase, call cloud function to resolve
+});
+
+abilityBtn.addEventListener('click', () => {
+    alert('Role ability – implement based on role');
+});
+
+// -------------------- Disconnect handling --------------------
+window.addEventListener('beforeunload', () => {
+    if (currentRoomId && currentPlayerId) {
+        db.ref('rooms/' + currentRoomId + '/players/' + currentPlayerId + '/connected').set(false);
+    }
+});
+    </script>
+</body>
+  </html>
